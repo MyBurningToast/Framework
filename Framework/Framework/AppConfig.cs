@@ -1,6 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-namespace Framework.Platform
+﻿namespace Framework
 {
     public class AppConfig
     {
@@ -9,5 +7,11 @@ namespace Framework.Platform
         public int Height { get; init; } = 480;
         public bool Vsync { get; init; } = true;
         public bool Resizeable { get; init; } = false;
+
+        public bool EnableValidationLayers = true;
+        public readonly string[] ValidationLayers = new string[]
+        {
+            "VK_LAYER_KHRONOS_validation"
+        };
     }
 }
