@@ -2,6 +2,7 @@
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.EXT;
+using Silk.NET.Vulkan.Extensions.KHR;
 using System.Runtime.InteropServices;
 
 namespace Framework
@@ -9,9 +10,10 @@ namespace Framework
     internal struct QueueFamilyIndices
     {
         public uint? GraphicsFamily { get; set; }
+        public uint? PresentFamily { get; set; }
         public bool IsComplete()
         {
-            return GraphicsFamily.HasValue;
+            return GraphicsFamily.HasValue && PresentFamily.HasValue;
         }
     }
 
@@ -90,8 +92,6 @@ namespace Framework
                 throw new Exception("Failed to set up debug messenger");
         }
 
-
-
         private uint DebugCallback(DebugUtilsMessageSeverityFlagsEXT messageSeverity, DebugUtilsMessageTypeFlagsEXT messageTypes, DebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
         {
             Console.WriteLine("Validation layer: " + Marshal.PtrToStringAnsi((nint)pCallbackData->PMessage));
@@ -140,6 +140,11 @@ namespace Framework
                 if (queueFamily.QueueFlags.HasFlag(QueueFlags.GraphicsBit))
                     indices.GraphicsFamily = i;
 
+                _khrSurface.GetPhysicalDeviceSurfaceSupport(device, i, _surface, out var presentSupport);
+
+                if (presentSupport)
+                    indices.PresentFamily = i;
+
                 if (indices.IsComplete())
                     break;
                 i++;
@@ -173,10 +178,12 @@ namespace Framework
             return _config.ValidationLayers.All(availableLayerNames.Contains);
         }
 
-
         private void CreateLogicalDevice()
         {
             var indices = FindQueueFamilies(_physicalDevice);
+
+            var uniqueQueueFamilies = new[] { indices.GraphicsFamily!.Value, indices.PresentFamily!.Value };
+            uniqueQueueFamilies = uniqueQueueFamilies.Distinct().ToArray();
 
             DeviceQueueCreateInfo queueCreateInfo = new DeviceQueueCreateInfo()
             {
@@ -210,17 +217,29 @@ namespace Framework
                 createInfo.EnabledLayerCount = 0;
             }
 
-            if (_vk.CreateDevice(_physicalDevice, in createInfo, null, out device) != Result.Success)
+            if (_vk.CreateDevice(_physicalDevice, in createInfo, null, out _device) != Result.Success)
             {
                 throw new Exception("Failed to create logical device");
             }
 
-            _vk.GetDeviceQueue(device, indices.GraphicsFamily!.Value, 0, out graphicsQueue);
+            _vk.GetDeviceQueue(_device, indices.GraphicsFamily!.Value, 0, out _graphicsQueue);
+            _vk.GetDeviceQueue(_device, indices.PresentFamily!.Value, 0, out _presentQueue);
 
             if (_config.EnableValidationLayers)
             {
                 SilkMarshal.Free((nint)createInfo.PpEnabledLayerNames);
             }
         }
+
+        private void CreateSurface()
+        {
+            if (!_vk.TryGetInstanceExtension<KhrSurface>(_instance, out _khrSurface))
+            {
+                throw new NotSupportedException("KHR_surface extension not found");
+            }
+
+            _surface = _window.VkSurface!.Create<AllocationCallbacks>(_instance.ToHandle(), null).ToSurface();
+        }
+
     }
 }

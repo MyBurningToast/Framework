@@ -1,6 +1,7 @@
 ﻿using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.EXT;
+using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
 
 namespace Framework
@@ -16,10 +17,14 @@ namespace Framework
         private ExtDebugUtils _debugUtils;
         private DebugUtilsMessengerEXT _debugMessenger;
 
-        private PhysicalDevice _physicalDevice;
-        private Device device;
+        private KhrSurface _khrSurface;
+        private SurfaceKHR _surface;
 
-        private Queue graphicsQueue;
+        private PhysicalDevice _physicalDevice;
+        private Device _device;
+
+        private Queue _graphicsQueue;
+        private Queue _presentQueue;
 
         public App(AppConfig config)
         {
@@ -43,14 +48,17 @@ namespace Framework
 
         private void CleanUp()
         {
+            _vk.DestroyDevice(_device, null);
+
             if (_config.EnableValidationLayers)
             {
                 _debugUtils.DestroyDebugUtilsMessenger(_instance, _debugMessenger, null);
             }
 
-            _vk.DestroyDevice(device, null);
+            _khrSurface.DestroySurface(_instance, _surface, null);
             _vk.DestroyInstance(_instance, null);
             _vk.Dispose();
+
             _window.Dispose();
         }
 
@@ -79,6 +87,7 @@ namespace Framework
         {
             CreateInstance();
             SetupDebugMessenger();
+            CreateSurface();
             PickPhysicalDevice();
             CreateLogicalDevice();
         }
