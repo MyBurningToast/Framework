@@ -10,14 +10,14 @@ namespace Framework
     {
         private readonly AppConfig _config;
 
-        private IWindow _window;
-        private Vk _vk;
+        private IWindow _window = null!;
+        private Vk _vk = null!;
         private Instance _instance;
 
-        private ExtDebugUtils _debugUtils;
+        private ExtDebugUtils _debugUtils = null!;
         private DebugUtilsMessengerEXT _debugMessenger;
 
-        private KhrSurface _khrSurface;
+        private KhrSurface _khrSurface = null!;
         private SurfaceKHR _surface;
 
         private PhysicalDevice _physicalDevice;
