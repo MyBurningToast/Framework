@@ -52,6 +52,7 @@ namespace Framework
 		private Image[] _swapChainImages = null!;
 		private Format _swapChainImageFormat;
 		private Extent2D _swapChainExtent;
+		private ImageView[] _swapChainImageViews = null!;
 
 
 		public App(AppConfig config)
@@ -114,13 +115,14 @@ namespace Framework
 
         private void InitVulkan()
         {
-            CreateInstance();
-            SetupDebugMessenger();
-            CreateSurface();
-            PickPhysicalDevice();
-            CreateLogicalDevice();
-            CreateSwapChain();
-        }
+			CreateInstance();
+			SetupDebugMessenger();
+			CreateSurface();
+			PickPhysicalDevice();
+			CreateLogicalDevice();
+			CreateSwapChain();
+			CreateImageViews();
+		}
 
 
         private void CreateSwapChain()
@@ -537,6 +539,44 @@ namespace Framework
 			}
 
 			_surface = _window.VkSurface!.Create<AllocationCallbacks>(_instance.ToHandle(), null).ToSurface();
+		}
+
+		private void CreateImageViews()
+		{
+			_swapChainImageViews = new ImageView[_swapChainImages.Length];
+
+			for (int i = 0; i < _swapChainImages.Length; i++)
+			{
+				ImageViewCreateInfo createInfo = new()
+				{
+					SType = StructureType.ImageViewCreateInfo,
+					Image = _swapChainImages[i],
+					ViewType = ImageViewType.Type2D,
+					Format = _swapChainImageFormat,
+
+					Components =
+					{
+						R = ComponentSwizzle.Identity,
+						G = ComponentSwizzle.Identity,
+						B = ComponentSwizzle.Identity,
+						A = ComponentSwizzle.Identity,
+					},
+
+					SubresourceRange =
+					{
+						AspectMask = ImageAspectFlags.ColorBit,
+						BaseMipLevel = 0,
+						LevelCount = 1,
+						BaseArrayLayer = 0,
+						LayerCount = 1,
+					}
+				};
+
+				if (_vk.CreateImageView(_device, in createInfo, null, out _swapChainImageViews[i]) != Result.Success)
+				{
+					throw new Exception("Failed to create image views");
+				}
+			}
 		}
 	}
 }
