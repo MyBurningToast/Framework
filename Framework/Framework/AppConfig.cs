@@ -1,4 +1,6 @@
-﻿namespace Framework
+﻿using Silk.NET.Vulkan.Extensions.KHR;
+
+namespace Framework
 {
     public class AppConfig
     {
@@ -12,6 +14,11 @@
         public readonly string[] ValidationLayers = new string[]
         {
             "VK_LAYER_KHRONOS_validation"
+        };
+
+        public readonly string[] DeviceExtensions = new[]
+        {
+            KhrSwapchain.ExtensionName
         };
     }
 }
