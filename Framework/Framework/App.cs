@@ -77,6 +77,11 @@ namespace Framework
 
         private void CleanUp()
         {
+			foreach (var imageView in _swapChainImageViews)
+			{
+				_vk.DestroyImageView(_device, imageView, null);
+			}
+
             _khrSwapChain.DestroySwapchain(_device, _swapchain, null);
             _vk.DestroyDevice(_device, null);
 
