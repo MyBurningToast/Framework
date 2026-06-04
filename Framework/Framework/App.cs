@@ -513,17 +513,10 @@ namespace Framework
 				PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(_config.DeviceExtensions)
 			};
 
-			if (_config.EnableValidationLayers)
-			{
-				createInfo.EnabledLayerCount = (uint)_config.ValidationLayers.Length;
-				createInfo.PpEnabledLayerNames = (byte**)SilkMarshal.StringArrayToPtr(_config.ValidationLayers);
-			}
-			else
-			{
-				createInfo.EnabledLayerCount = 0;
-			}
+            createInfo.EnabledLayerCount = 0;
+            createInfo.PpEnabledLayerNames = null;
 
-			if (_vk.CreateDevice(_physicalDevice, in createInfo, null, out _device) != Result.Success)
+            if (_vk.CreateDevice(_physicalDevice, in createInfo, null, out _device) != Result.Success)
 			{
 				throw new Exception("Failed to create logical device");
 			}
