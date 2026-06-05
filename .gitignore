@@ -431,3 +431,6 @@ FodyWeavers.xsd
 # Ignore compiled SPIR-V binaries
 *.spirv
 *.spv
+
+# Rider
+.\idea
