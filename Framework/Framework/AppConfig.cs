@@ -7,6 +7,7 @@ namespace Framework
         public string Title { get; init; } = "App";
         public int Width { get; init; } = 800;
         public int Height { get; init; } = 480;
+        public int MaxFramesInFlight = 2;
         public bool Vsync { get; init; } = true;
         public bool Resizeable { get; init; } = false;
 

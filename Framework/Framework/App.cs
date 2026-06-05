@@ -8,6 +8,8 @@ using Silk.NET.Windowing;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
+using Semaphore = Silk.NET.Vulkan.Semaphore;
+
 namespace Framework
 {
 	internal struct QueueFamilyIndices
@@ -60,7 +62,13 @@ namespace Framework
 		private Pipeline _graphicsPipeline;
 
 		private CommandPool _commandPool;
-		private CommandBuffer[] commandBuffers = null!;
+		private CommandBuffer[] _commandBuffers = null!;
+
+		private Semaphore[] _imageAvailableSemaphores = null!;
+		private Semaphore[] _renderFinishedSemaphores = null!;
+		private Fence[] _inFlightFences;
+		private Fence[] _imagesInFlight;
+		private int _currentFrame = 0;
 
 		public App(AppConfig config)
         {
@@ -75,7 +83,12 @@ namespace Framework
             CleanUp();
         }
 
-        public void MainLoop() => _window.Run();
+		private void MainLoop()
+		{
+			_window.Render += DrawFrame;
+			_window.Run();
+			_vk.DeviceWaitIdle(_device);
+		}
         public void Dispose() => _window.Dispose();
 
         private void OnWindowLoad() { }
@@ -84,6 +97,13 @@ namespace Framework
 
         private void CleanUp()
         {
+			for (int i = 0; i < _config.MaxFramesInFlight; i++)
+			{
+                _vk.DestroySemaphore(_device, _renderFinishedSemaphores[i], null);
+                _vk.DestroySemaphore(_device, _imageAvailableSemaphores[i], null);
+                _vk.DestroyFence(_device, _inFlightFences[i], null);
+            }
+
 			_vk.DestroyCommandPool(_device, _commandPool, null);
 
 			foreach (var frameBuffer in _swapChainFramebuffers)
@@ -152,6 +172,8 @@ namespace Framework
 
 			CreateCommandPool();
 			CreateCommandBuffers();
+
+			CreateSyncObjects();
 		}
 
 
@@ -626,6 +648,16 @@ namespace Framework
                 PColorAttachments = &colorAttachmentRef,
             };
 
+			SubpassDependency dependency = new()
+			{
+				SrcSubpass = Vk.SubpassExternal,
+				DstSubpass = 0,
+				SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+				SrcAccessMask = 0,
+				DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+				DstAccessMask = AccessFlags.ColorAttachmentWriteBit
+			};
+
             RenderPassCreateInfo renderPassInfo = new()
             {
                 SType = StructureType.RenderPassCreateInfo,
@@ -633,6 +665,9 @@ namespace Framework
                 PAttachments = &colorAttachment,
                 SubpassCount = 1,
                 PSubpasses = &subpass,
+
+				DependencyCount = 1,
+				PDependencies = &dependency
             };
 
             if (_vk.CreateRenderPass(_device, in renderPassInfo, null, out _renderPass) != Result.Success)
@@ -857,29 +892,29 @@ namespace Framework
 
 		private void CreateCommandBuffers()
 		{
-			commandBuffers = new CommandBuffer[_swapChainFramebuffers.Length];
+			_commandBuffers = new CommandBuffer[_swapChainFramebuffers.Length];
 			CommandBufferAllocateInfo allocateInfo = new()
 			{
 				SType = StructureType.CommandBufferAllocateInfo,
 				CommandPool = _commandPool,
 				Level = CommandBufferLevel.Primary,
-				CommandBufferCount = (uint)commandBuffers.Length
+				CommandBufferCount = (uint)_commandBuffers.Length
 			};
 
-			fixed (CommandBuffer* commandBufferPtr = commandBuffers)
+			fixed (CommandBuffer* commandBufferPtr = _commandBuffers)
 			{
 				if (_vk.AllocateCommandBuffers(_device, in allocateInfo, commandBufferPtr) != Result.Success)
 					throw new Exception("Failed to allocate command buffers");
 			}
 
-			for (int i = 0; i < commandBuffers.Length; i++)
+			for (int i = 0; i < _commandBuffers.Length; i++)
 			{
 				CommandBufferBeginInfo beginInfo = new()
 				{
 					SType = StructureType.CommandBufferBeginInfo,
 				};
 
-				if (_vk.BeginCommandBuffer(commandBuffers[i], in beginInfo) != Result.Success)
+				if (_vk.BeginCommandBuffer(_commandBuffers[i], in beginInfo) != Result.Success)
 					throw new Exception("Failed to begin recording command buffer");
 
 				RenderPassBeginInfo renderPassBeginInfo = new()
@@ -902,15 +937,124 @@ namespace Framework
 				renderPassBeginInfo.ClearValueCount = 1;
 				renderPassBeginInfo.PClearValues = &clearColor;
 
-				_vk.CmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo, SubpassContents.Inline);
-				_vk.CmdBindPipeline(commandBuffers[i], PipelineBindPoint.Graphics, _graphicsPipeline);
+				_vk.CmdBeginRenderPass(_commandBuffers[i], &renderPassBeginInfo, SubpassContents.Inline);
+				_vk.CmdBindPipeline(_commandBuffers[i], PipelineBindPoint.Graphics, _graphicsPipeline);
 
-				_vk.CmdDraw(commandBuffers[i], 3, 1, 0, 0);
-				_vk.CmdEndRenderPass(commandBuffers[i]);
+				_vk.CmdDraw(_commandBuffers[i], 3, 1, 0, 0);
+				_vk.CmdEndRenderPass(_commandBuffers[i]);
 
-				if (_vk.EndCommandBuffer(commandBuffers[i]) != Result.Success)
+				if (_vk.EndCommandBuffer(_commandBuffers[i]) != Result.Success)
 					throw new Exception("Failed to record command buffer");
             }
 		}
+
+		private void CreateSyncObjects()
+		{
+			_imageAvailableSemaphores = new Semaphore[_config.MaxFramesInFlight];
+			_renderFinishedSemaphores = new Semaphore[_config.MaxFramesInFlight];
+			_inFlightFences = new Fence[_config.MaxFramesInFlight];
+			_imagesInFlight = new Fence[_swapChainImages.Length];
+
+			SemaphoreCreateInfo semaphoreInfo = new()
+			{
+				SType = StructureType.SemaphoreCreateInfo
+			};
+
+			FenceCreateInfo fenceInfo = new()
+			{
+				SType = StructureType.FenceCreateInfo,
+				Flags = FenceCreateFlags.SignaledBit
+			};
+
+			for (var i = 0; i < _config.MaxFramesInFlight; i++)
+			{
+				if (_vk!.CreateSemaphore(_device, in semaphoreInfo, null, out _imageAvailableSemaphores[i]) != Result.Success ||
+					_vk!.CreateSemaphore(_device, in semaphoreInfo, null, out _renderFinishedSemaphores[i]) != Result.Success ||
+					_vk!.CreateFence(_device, in fenceInfo, null, out _inFlightFences[i]) != Result.Success)
+				{
+					throw new Exception("Failed to create synchronization objects for a frame");
+				}
+			}
+		}
+
+		private void DrawFrame(double delta)
+		{
+            _vk.WaitForFences(_device, 1, in _inFlightFences[_currentFrame], true, ulong.MaxValue);
+
+            uint imageIndex = 0;
+            _khrSwapChain.AcquireNextImage(_device, _swapchain, ulong.MaxValue, _imageAvailableSemaphores[_currentFrame], default, ref imageIndex);
+
+            if (_imagesInFlight[imageIndex].Handle != default)
+            {
+                _vk.WaitForFences(_device, 1, in _inFlightFences[_currentFrame], true, ulong.MaxValue);
+            }
+            _imagesInFlight[imageIndex] = _inFlightFences[_currentFrame];
+
+            SubmitInfo submitInfo = new()
+            {
+                SType = StructureType.SubmitInfo,
+            };
+
+            var waitSemaphores = stackalloc[]
+			{
+				_imageAvailableSemaphores[_currentFrame]
+			};
+            var waitStages = stackalloc[]
+			{
+				PipelineStageFlags.ColorAttachmentOutputBit
+			};
+
+            var buffer = _commandBuffers[imageIndex];
+
+            submitInfo = submitInfo with
+            {
+                WaitSemaphoreCount = 1,
+                PWaitSemaphores = waitSemaphores,
+                PWaitDstStageMask = waitStages,
+
+                CommandBufferCount = 1,
+                PCommandBuffers = &buffer
+            };
+
+            var signalSemaphores = stackalloc[]
+			{
+				_renderFinishedSemaphores[_currentFrame]
+			};
+
+            submitInfo = submitInfo with
+            {
+                SignalSemaphoreCount = 1,
+                PSignalSemaphores = signalSemaphores,
+            };
+
+            _vk.ResetFences(_device, 1, in _inFlightFences[_currentFrame]);
+
+            if (_vk.QueueSubmit(_graphicsQueue, 1, in submitInfo, _inFlightFences[_currentFrame]) != Result.Success)
+            {
+                throw new Exception("failed to submit draw command buffer!");
+            }
+
+            var swapChains = stackalloc[]
+			{
+				_swapchain
+			};
+
+            PresentInfoKHR presentInfo = new()
+            {
+                SType = StructureType.PresentInfoKhr,
+
+                WaitSemaphoreCount = 1,
+                PWaitSemaphores = signalSemaphores,
+
+                SwapchainCount = 1,
+                PSwapchains = swapChains,
+
+                PImageIndices = &imageIndex
+            };
+
+            _khrSwapChain.QueuePresent(_presentQueue, in presentInfo);
+
+            _currentFrame = (_currentFrame + 1) % _config.MaxFramesInFlight;
+        }
 	}
 }
