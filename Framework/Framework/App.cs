@@ -54,6 +54,10 @@ namespace Framework
 		private Extent2D _swapChainExtent;
 		private ImageView[] _swapChainImageViews = null!;
 
+        private RenderPass _renderPass;
+        private PipelineLayout _pipelineLayout;
+		private Pipeline _graphicsPipeline;
+
 
 		public App(AppConfig config)
         {
@@ -77,6 +81,10 @@ namespace Framework
 
         private void CleanUp()
         {
+			_vk.DestroyPipeline(_device, _graphicsPipeline, null);
+			_vk.DestroyPipelineLayout(_device, _pipelineLayout, null);
+			_vk.DestroyRenderPass(_device, _renderPass, null);
+
 			foreach (var imageView in _swapChainImageViews)
 			{
 				_vk.DestroyImageView(_device, imageView, null);
@@ -127,7 +135,8 @@ namespace Framework
 			CreateLogicalDevice();
 			CreateSwapChain();
 			CreateImageViews();
-			CreateGraphicsPipeline();
+			CreateRenderPass();
+            CreateGraphicsPipeline();
 		}
 
 
@@ -578,7 +587,49 @@ namespace Framework
 			}
 		}
 
-		private void CreateGraphicsPipeline()
+		private void CreateRenderPass()
+		{
+            AttachmentDescription colorAttachment = new()
+            {
+                Format = _swapChainImageFormat,
+                Samples = SampleCountFlags.Count1Bit,
+                LoadOp = AttachmentLoadOp.Clear,
+                StoreOp = AttachmentStoreOp.Store,
+                StencilLoadOp = AttachmentLoadOp.DontCare,
+                InitialLayout = ImageLayout.Undefined,
+                FinalLayout = ImageLayout.PresentSrcKhr,
+            };
+
+            AttachmentReference colorAttachmentRef = new()
+            {
+                Attachment = 0,
+                Layout = ImageLayout.ColorAttachmentOptimal,
+            };
+
+            SubpassDescription subpass = new()
+            {
+                PipelineBindPoint = PipelineBindPoint.Graphics,
+                ColorAttachmentCount = 1,
+                PColorAttachments = &colorAttachmentRef,
+            };
+
+            RenderPassCreateInfo renderPassInfo = new()
+            {
+                SType = StructureType.RenderPassCreateInfo,
+                AttachmentCount = 1,
+                PAttachments = &colorAttachment,
+                SubpassCount = 1,
+                PSubpasses = &subpass,
+            };
+
+            if (_vk.CreateRenderPass(_device, in renderPassInfo, null, out _renderPass) != Result.Success)
+            {
+                throw new Exception("failed to create render pass!");
+            }
+        }
+
+
+        private void CreateGraphicsPipeline()
 		{
             var vertShadeCode = File.ReadAllBytes(@"..\..\..\..\Framework\Shaders\vert.spv");
             var fragShaderCode = File.ReadAllBytes(@"..\..\..\..\Framework\Shaders\frag.spv");
@@ -602,9 +653,131 @@ namespace Framework
 				PName = (byte*)SilkMarshal.StringToPtr("main")
 			};
 
-			var shaderStages = stackalloc[] { vertShaderStageInfo, fragShaderStageInfo };
+			var shaderStages = stackalloc[]
+			{
+				vertShaderStageInfo,
+				fragShaderStageInfo
+			};
 
-			_vk.DestroyShaderModule(_device, fragShaderModule, null);
+			PipelineVertexInputStateCreateInfo vertexInputInfo = new()
+			{
+				SType = StructureType.PipelineVertexInputStateCreateInfo,
+				VertexBindingDescriptionCount = 0,
+				VertexAttributeDescriptionCount = 0
+			};
+			PipelineInputAssemblyStateCreateInfo inputAssemblyInfo = new()
+			{
+				SType = StructureType.PipelineInputAssemblyStateCreateInfo,
+				Topology = PrimitiveTopology.TriangleList,
+				PrimitiveRestartEnable = false
+			};
+
+			Viewport viewport = new()
+			{
+				X = 0,
+				Y = 0,
+				Width = _swapChainExtent.Width,
+				Height = _swapChainExtent.Height,
+				MinDepth = 0,
+				MaxDepth = 1	
+			};
+			
+			Rect2D scissor = new()
+			{
+				Offset = { X = 0, Y = 0 },
+				Extent = _swapChainExtent
+			};
+
+			PipelineViewportStateCreateInfo viewportInfo = new()
+			{
+				SType = StructureType.PipelineViewportStateCreateInfo,
+				ViewportCount = 1,
+				PViewports = &viewport,
+				ScissorCount = 1,
+				PScissors = &scissor
+			};
+
+			PipelineRasterizationStateCreateInfo rasterizerInfo = new()
+			{
+				SType = StructureType.PipelineRasterizationStateCreateInfo,
+				DepthClampEnable = false,
+				RasterizerDiscardEnable = false,
+				PolygonMode = PolygonMode.Fill,
+				LineWidth = 1,
+				CullMode = CullModeFlags.BackBit,
+				FrontFace = FrontFace.Clockwise,
+				DepthBiasEnable = false
+			};
+
+			PipelineMultisampleStateCreateInfo multisamplingInfo = new()
+			{
+				SType = StructureType.PipelineMultisampleStateCreateInfo,
+				SampleShadingEnable = false,
+				RasterizationSamples = SampleCountFlags.Count1Bit
+			};
+
+			PipelineColorBlendAttachmentState colorBlendAttachment = new()
+			{
+				ColorWriteMask =
+					ColorComponentFlags.RBit |
+					ColorComponentFlags.GBit |
+					ColorComponentFlags.BBit |
+					ColorComponentFlags.ABit,
+				BlendEnable = false
+			};
+
+			PipelineColorBlendStateCreateInfo colorBlendInfo = new()
+			{
+				SType = StructureType.PipelineColorBlendStateCreateInfo,
+				LogicOpEnable = false,
+				LogicOp = LogicOp.Copy,
+				AttachmentCount = 1,
+				PAttachments = &colorBlendAttachment
+			};
+
+			colorBlendInfo.BlendConstants[0] = 0;
+			colorBlendInfo.BlendConstants[1] = 0;
+			colorBlendInfo.BlendConstants[2] = 0;
+			colorBlendInfo.BlendConstants[3] = 0;
+
+			PipelineLayoutCreateInfo pipelineLayoutInfo = new()
+			{
+				SType = StructureType.PipelineLayoutCreateInfo,
+				SetLayoutCount = 0,
+				PushConstantRangeCount = 0
+			};
+
+			if (_vk.CreatePipelineLayout(_device, in pipelineLayoutInfo, null, out _pipelineLayout) != Result.Success)
+			{
+				throw new Exception("Failed to create pipeline layout");
+			}
+
+			GraphicsPipelineCreateInfo pipelineInfo = new()
+			{
+				SType = StructureType.GraphicsPipelineCreateInfo,
+
+				StageCount = 2,
+				PStages = shaderStages,
+
+				PVertexInputState = &vertexInputInfo,
+				PInputAssemblyState = &inputAssemblyInfo,
+				PViewportState = &viewportInfo,
+				PRasterizationState = &rasterizerInfo,
+				PMultisampleState = &multisamplingInfo,
+				PColorBlendState = &colorBlendInfo,
+
+				Layout = _pipelineLayout,
+				RenderPass = _renderPass,
+				Subpass = 0,
+
+				BasePipelineHandle = default,
+				BasePipelineIndex = -1,
+			};
+
+			if (_vk.CreateGraphicsPipelines(_device, default, 1, in pipelineInfo, null, out _graphicsPipeline) != Result.Success)
+				throw new Exception("Failed to create graphics pipeline");
+
+            _vk.DestroyShaderModule(_device, fragShaderModule, null);
 			_vk.DestroyShaderModule(_device, vertShaderModule, null);
 
 			SilkMarshal.Free((nint)vertShaderStageInfo.PName);
