@@ -704,10 +704,11 @@ namespace Framework
 
         private void CreateGraphicsPipeline()
 		{
-            var vertShadeCode = File.ReadAllBytes(@"..\..\..\..\Framework\Shaders\vert.spv");
-            var fragShaderCode = File.ReadAllBytes(@"..\..\..\..\Framework\Shaders\frag.spv");
+			var shaderDir = Path.Combine(AppContext.BaseDirectory, "shaders");
+			var vertShaderCode = File.ReadAllBytes(Path.Combine(shaderDir, "vert.spv"));
+			var fragShaderCode = File.ReadAllBytes(Path.Combine(shaderDir, "frag.spv"));
 
-			var vertShaderModule = CreateShaderModule(vertShadeCode);
+			var vertShaderModule = CreateShaderModule(vertShaderCode);
 			var fragShaderModule = CreateShaderModule(fragShaderCode);
 
 			PipelineShaderStageCreateInfo vertShaderStageInfo = new()
